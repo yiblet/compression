@@ -3,3 +3,4 @@
 *.so
 *~
 env/
+compression.egg-info
