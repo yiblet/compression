@@ -173,7 +173,7 @@ def train():
     # Multiply by 255^2 to correct for rescaling.
     train_mse *= 255**2
 
-    train_psnr = tf.image.psnr(x, x_tilde, 1.0)
+    train_psnr = tf.reduce_mean(tf.image.psnr(x, x_tilde, 1.0))
 
     # The rate-distortion cost.
     train_loss = args.lmbda * train_mse + train_bpp
