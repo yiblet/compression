@@ -29,12 +29,110 @@ from __future__ import print_function
 
 import argparse
 import glob
-
 # Dependency imports
-
 import numpy as np
 import tensorflow as tf
 import tensorflow_compression as tfc
+import tensorflow_probability as tfp
+
+# ------------------------------------------------------------------------------
+# ------------------------------- utility layers -------------------------------
+# ------------------------------------------------------------------------------
+
+
+class Quantizer(tf.keras.layers.Layer):
+    def call(self, input):
+        @tf.custom_gradient
+        def quantizer(latent):
+            expand = latent * 255.0
+            expand = tf.clip_by_value(expand, 0, 255)
+            expand = tf.round(expand)
+            expand /= 255.0
+
+            def grad(dy):
+                return dy * (1 - tf.cos(255.0 * np.pi * latent))
+
+            return expand, grad
+
+        return quantizer(input)
+
+
+class LatentDistribution(tf.keras.layers.Layer):
+    def __init__(self, num_categories):
+        tf.keras.layers.Layer.__init__(self)
+        self.categories = num_categories
+
+    @property
+    def distribution(self):
+        if not self.built:
+            self.build(None)
+
+        return self._distribution
+
+    def build(self, input_shape):
+        tfd = tfp.distributions
+
+        hidden_dims = int(input_shape[-1])
+
+        with tf.name_scope('latent_distributions'):
+            categorical = self.add_weight(
+                name='categorical_distribution',
+                shape=[hidden_dims, self.categories],
+                trainable=True,
+            )
+            categorical = tf.nn.softmax(categorical)
+            loc = self.add_weight(
+                name='logistic_loc_variables',
+                shape=[hidden_dims, self.categories],
+                trainable=True,
+            )
+            scale = tf.nn.softplus(
+                self.add_weight(
+                    name='logistic_scale_variables',
+                    shape=[hidden_dims, self.categories],
+                    trainable=True,
+                ))
+
+            tf.summary.histogram('categorical', categorical)
+            tf.summary.histogram('loc', loc)
+            tf.summary.histogram('scale', scale)
+
+        self.vars = [categorical, loc, scale]
+        self._distribution = tfd.MixtureSameFamily(
+            mixture_distribution=tfd.Categorical(probs=categorical),
+            components_distribution=tfd.Normal(
+                loc=loc,
+                scale=scale,
+            ))
+
+        self.built = True
+
+    def call(self, latent):
+
+        stopped_latents = latent
+        likelihoods = self._distribution.cdf(
+            tf.clip_by_value(stopped_latents + 0.5 / 255.0, -1.0,
+                             1.0)) - self._distribution.cdf(
+                                 tf.clip_by_value(
+                                     stopped_latents - 0.5 / 255.0, -1.0, 1.0))
+
+        return likelihoods
+
+
+class Entropy(tf.keras.layers.Layer):
+    def __init__(self, num_categories):
+        self.num_categories = num_categories
+        tf.keras.layers.Layer.__init__(self)
+
+    def build(self, input_shape):
+        self.quantizer = Quantizer()
+        self.distribution = LatentDistribution(self.num_categories)
+        self.built = True
+
+    def call(self, latent):
+        quantized = self.quantizer(latent)
+        likelihoods = self.distribution(quantized)
+        return quantized, likelihoods
 
 
 def load_image(filename):
@@ -161,9 +259,12 @@ def train():
 
     # Build autoencoder.
     y = analysis_transform(x, args.num_filters)
-    entropy_bottleneck = tfc.EntropyBottleneck()
-    y_tilde, likelihoods = entropy_bottleneck(y, training=True)
+    entropy_bottleneck = Entropy(20)
+    y_tilde, likelihoods = entropy_bottleneck(y)
+
     x_tilde = synthesis_transform(y_tilde, args.num_filters)
+
+    tf.summary.histogram('latents', y_tilde)
 
     # Total number of bits divided by number of pixels.
     train_bpp = tf.reduce_sum(tf.log(likelihoods)) / (-np.log(2) * num_pixels)
@@ -183,10 +284,10 @@ def train():
     main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
     main_step = main_optimizer.minimize(train_loss, global_step=step)
 
-    aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
-    aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
+    # aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
+    # aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
 
-    train_op = tf.group(main_step, aux_step, entropy_bottleneck.updates[0])
+    train_op = tf.group(main_step)
 
     tf.summary.scalar("loss", train_loss)
     tf.summary.scalar("bpp", train_bpp)
@@ -198,7 +299,7 @@ def train():
 
     # Creates summary for the probability mass function (PMF) estimated in the
     # bottleneck.
-    entropy_bottleneck.visualize()
+    # entropy_bottleneck.visualize()
 
     hooks = [
         tf.train.StopAtStepHook(last_step=args.last_step),
