@@ -109,12 +109,12 @@ class LatentDistribution(tf.keras.layers.Layer):
 
     def call(self, latent):
 
-        stopped_latents = latent
-        likelihoods = self._distribution.cdf(
-            tf.clip_by_value(stopped_latents + 0.5 / 255.0, -1.0,
-                             1.0)) - self._distribution.cdf(
-                                 tf.clip_by_value(
-                                     stopped_latents - 0.5 / 255.0, -1.0, 1.0))
+        stopped_latents = tf.stop_gradient(latent)
+        likelihoods = (
+            self._distribution.cdf(
+                tf.clip_by_value(stopped_latents + 0.5 / 255.0, -1.0, 1.0)) -
+            self._distribution.cdf(
+                tf.clip_by_value(stopped_latents - 0.5 / 255.0, -1.0, 1.0)))
 
         return likelihoods
 
