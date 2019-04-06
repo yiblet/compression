@@ -291,8 +291,8 @@ def train():
     )
 
     tf.summary.scalar(
-        'mean_likelihood',
-        tf.reduce_mean(tf.reduce_sum(likelihoods, keepdims=0)),
+        'mean_log_likelihood',
+        tf.reduce_mean(tf.reduce_sum(likelihoods, axis=[1, 2, 3])),
     )
 
     # Total number of bits divided by number of pixels.
