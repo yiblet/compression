@@ -40,6 +40,13 @@ import tensorflow_probability as tfp
 # ------------------------------------------------------------------------------
 
 
+def logsub(loga, logb):
+    """outputs log(a - b) for inputs log(a), log(b)"""
+    with tf.name_scope('logsub'):
+        return loga + tf.log1p(
+            -tf.exp(logb - loga))  # log(a) + log( 1 - b / a)
+
+
 class Quantizer(tf.keras.layers.Layer):
     def call(self, input):
         @tf.custom_gradient
@@ -111,11 +118,22 @@ class LatentDistribution(tf.keras.layers.Layer):
     def call(self, latent):
 
         stopped_latents = tf.stop_gradient(latent)
-        likelihoods = (
-            self._distribution.cdf(
-                tf.clip_by_value(stopped_latents + 0.5 / 255.0, -1.0, 1.0)) -
-            self._distribution.cdf(
-                tf.clip_by_value(stopped_latents - 0.5 / 255.0, -1.0, 1.0)))
+
+        ROUND = (2.0**args.rounding_precision - 1)
+        likelihoods = logsub(
+            self._distribution.log_cdf(
+                tf.clip_by_value(
+                    stopped_latents + 0.5 / ROUND,
+                    -1.0,
+                    1.0,
+                )),
+            self._distribution.log_cdf(
+                tf.clip_by_value(
+                    stopped_latents - 0.5 / ROUND,
+                    -1.0,
+                    1.0,
+                )),
+        )
 
         return likelihoods
 
@@ -266,13 +284,19 @@ def train():
     x_tilde = synthesis_transform(y, args.num_filters)
 
     tf.summary.histogram('latents', y_tilde)
-    tf.summary.histogram(
+
+    tf.summary.scalar(
         'latent_mean_difference',
         tf.reduce_mean((y - y_tilde)**2.0),
     )
 
+    tf.summary.scalar(
+        'mean_likelihood',
+        tf.reduce_mean(tf.reduce_sum(likelihoods, keepdims=0)),
+    )
+
     # Total number of bits divided by number of pixels.
-    # train_bpp = tf.reduce_sum(tf.log(likelihoods)) / (-np.log(2) * num_pixels)
+    train_bpp = tf.reduce_sum(likelihoods) / (-np.log(2) * num_pixels)
 
     # Mean squared error across pixels.
     train_mse = tf.reduce_mean(tf.squared_difference(x, x_tilde))
@@ -282,7 +306,7 @@ def train():
     train_psnr = tf.reduce_mean(tf.image.psnr(x, x_tilde, 1.0))
 
     # The rate-distortion cost.
-    train_loss = args.lmbda * train_mse
+    train_loss = args.lmbda * train_mse + train_bpp
 
     # Minimize loss and auxiliary loss, and execute update op.
     step = tf.train.create_global_step()
@@ -474,7 +498,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--rounding_precision',
         type=int,
-        default=6,
+        default=8,
     )
 
     args = parser.parse_args()
