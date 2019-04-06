@@ -285,9 +285,21 @@ def train():
 
     tf.summary.histogram('latents', y_tilde)
 
+    distance = y - y_tilde
+
     tf.summary.scalar(
-        'latent_mean_difference',
-        tf.reduce_mean((y - y_tilde)**2.0),
+        'latent_mean_batchwise_square_difference',
+        tf.reduce_mean(tf.reduce_sum((distance)**2.0, [1, 2, 3])),
+    )
+
+    tf.summary.scalar(
+        'latent_mean_pointwise_square_difference',
+        tf.reduce_mean((distance)**2.0),
+    )
+
+    tf.summary.scalar(
+        'latent_mean_pointwise_absolute_difference',
+        tf.reduce_mean(tf.abs(distance)),
     )
 
     tf.summary.scalar(
@@ -319,7 +331,7 @@ def train():
     train_op = tf.group(main_step)
 
     tf.summary.scalar("loss", train_loss)
-    # tf.summary.scalar("bpp", train_bpp)
+    tf.summary.scalar("bpp", train_bpp)
     tf.summary.scalar("mse", train_mse)
     tf.summary.scalar("psnr", train_psnr)
 
