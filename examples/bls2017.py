@@ -472,12 +472,13 @@ if __name__ == "__main__":
         help="Number of CPU threads to use for parallel decoding of training "
         "images.")
     parser.add_argument(
-        '--rounding_precision'
-        type=int
-        default=6
+        '--rounding_precision',
+        type=int,
+        default=6,
     )
 
     args = parser.parse_args()
+    print(args)
 
     if args.command == "train":
         train()
