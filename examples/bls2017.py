@@ -94,30 +94,37 @@ class LatentDistribution(tf.keras.layers.Layer):
                 shape=[hidden_dims, self.categories],
                 trainable=True,
             )
-            scale = tf.nn.softplus(
+
+            loc = self.add_weight(
+                name='logistic_loc_variables',
+                shape=[hidden_dims, self.categories],
+                trainable=True,
+            )
+
+            self.scale = tf.nn.softplus(
                 self.add_weight(
-                    name='logistic_scale_variables',
-                    shape=[hidden_dims, self.categories],
+                    name='scale_variables',
+                    shape=[hidden_dims],
                     trainable=True,
                 ))
 
             tf.summary.histogram('categorical', categorical)
             tf.summary.histogram('loc', loc)
-            tf.summary.histogram('scale', scale)
+            tf.summary.histogram('scale', self.scale)
 
-        self.vars = [categorical, loc, scale]
+        self.vars = [categorical, loc, self.scale]
         self._distribution = tfd.MixtureSameFamily(
             mixture_distribution=tfd.Categorical(probs=categorical),
             components_distribution=tfd.Normal(
                 loc=loc,
-                scale=scale,
+                scale=tf.ones_like(loc),
             ))
 
         self.built = True
 
     def call(self, latent):
 
-        stopped_latents = tf.stop_gradient(latent)
+        stopped_latents = self.scale * tf.stop_gradient(latent)
 
         ROUND = (2.0**args.rounding_precision - 1)
         likelihoods = logsub(
