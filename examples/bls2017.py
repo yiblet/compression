@@ -259,12 +259,16 @@ def train():
 
     # Build autoencoder.
     y = analysis_transform(x, args.num_filters)
-    # entropy_bottleneck = Entropy(20)
-    # y_tilde, likelihoods = entropy_bottleneck(y)
+    entropy_bottleneck = Entropy(20)
+    y_tilde, likelihoods = entropy_bottleneck(y)
 
     x_tilde = synthesis_transform(y, args.num_filters)
 
-    # tf.summary.histogram('latents', y_tilde)
+    tf.summary.histogram('latents', y_tilde)
+    tf.summary.histogram(
+        'latent_mean_difference',
+        tf.reduce_mean((y - y_tilde)**2.0),
+    )
 
     # Total number of bits divided by number of pixels.
     # train_bpp = tf.reduce_sum(tf.log(likelihoods)) / (-np.log(2) * num_pixels)
