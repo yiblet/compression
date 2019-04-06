@@ -53,7 +53,6 @@ class Quantizer(tf.keras.layers.Layer):
         def quantizer(latent):
             ROUND = (2.0**args.rounding_precision - 1)
             expand = latent * ROUND
-            expand = tf.clip_by_value(expand, 0, ROUND)
             expand = tf.round(expand)
             expand /= ROUND
 
@@ -142,7 +141,7 @@ class LatentDistribution(tf.keras.layers.Layer):
                 )),
         )
 
-        return likelihoods
+        return (stopped_latents / self.scale, likelihoods)
 
 
 class Entropy(tf.keras.layers.Layer):
@@ -157,8 +156,7 @@ class Entropy(tf.keras.layers.Layer):
 
     def call(self, latent):
         quantized = self.quantizer(latent)
-        likelihoods = self.distribution(quantized)
-        return quantized, likelihoods
+        return self.distribution(quantized)
 
 
 def load_image(filename):
