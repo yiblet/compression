@@ -130,7 +130,7 @@ class Entropy(tf.keras.layers.Layer):
         self.built = True
 
     def call(self, latent):
-        quantized = self.quantizer(latent)
+        quantized = latent
         likelihoods = self.distribution(quantized)
         return quantized, likelihoods
 
