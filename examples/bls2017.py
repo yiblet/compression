@@ -130,7 +130,7 @@ class Entropy(tf.keras.layers.Layer):
         self.built = True
 
     def call(self, latent):
-        quantized = latent
+        quantized = self.quantizer(latent)
         likelihoods = self.distribution(quantized)
         return quantized, likelihoods
 
@@ -259,9 +259,8 @@ def train():
 
     # Build autoencoder.
     y = analysis_transform(x, args.num_filters)
-    entropy_bottleneck = Entropy(20)
-    y_tilde, likelihoods = entropy_bottleneck(y)
-
+    entropy_bottleneck = tfc.EntropyBottleneck()
+    y_tilde, likelihoods = entropy_bottleneck(y, training=True)
     x_tilde = synthesis_transform(y_tilde, args.num_filters)
 
     tf.summary.histogram('latents', y_tilde)
@@ -284,10 +283,10 @@ def train():
     main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
     main_step = main_optimizer.minimize(train_loss, global_step=step)
 
-    # aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
-    # aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
+    aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
+    aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
 
-    train_op = tf.group(main_step)
+    train_op = tf.group(main_step, aux_step, entropy_bottleneck.updates[0])
 
     tf.summary.scalar("loss", train_loss)
     tf.summary.scalar("bpp", train_bpp)
