@@ -44,7 +44,7 @@ class Quantizer(tf.keras.layers.Layer):
     def call(self, input):
         @tf.custom_gradient
         def quantizer(latent):
-            ROUND = (2.0**6 - 1)
+            ROUND = (2.0**args.rounding_precision - 1)
             expand = latent * ROUND
             expand = tf.clip_by_value(expand, 0, ROUND)
             expand = tf.round(expand)
@@ -471,6 +471,11 @@ if __name__ == "__main__":
         default=16,
         help="Number of CPU threads to use for parallel decoding of training "
         "images.")
+    parser.add_argument(
+        '--rounding_precision'
+        type=int
+        default=6
+    )
 
     args = parser.parse_args()
 
