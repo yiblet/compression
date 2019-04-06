@@ -273,7 +273,7 @@ def train():
 
     num_pixels = args.batchsize * args.patchsize**2
 
-    # Get training patch from dataset.
+    # Get training patch from dataset
     x = train_dataset.make_one_shot_iterator().get_next()
 
     # Build autoencoder.
@@ -283,7 +283,9 @@ def train():
 
     x_tilde = synthesis_transform(y, args.num_filters)
 
+    tf.summary.histogram('pre_latents', y)
     tf.summary.histogram('latents', y_tilde)
+    tf.summary.histogram('distance', y - y_tilde)
 
     distance = y - y_tilde
 
@@ -300,6 +302,22 @@ def train():
     tf.summary.scalar(
         'latent_mean_pointwise_absolute_difference',
         tf.reduce_mean(tf.abs(distance)),
+    )
+
+    tf.summary.scalar(
+        'latent_max_pointwise_absolute_difference',
+        tf.reduce_max(tf.abs(distance)),
+    )
+
+    tf.summary.scalar(
+        'latent_min_pointwise_absolute_difference',
+        tf.reduce_min(tf.abs(distance)),
+    )
+
+    tf.summary.scalar(
+        'latent_variance_pointwise_absolute_difference',
+        tf.reduce_mean((tf.abs(distance) - tf.reduce_mean(tf.abs(distance)))
+                       **2.0),
     )
 
     tf.summary.scalar(
