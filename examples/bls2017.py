@@ -123,25 +123,16 @@ class LatentDistribution(tf.keras.layers.Layer):
 
     def call(self, latent):
 
-        stopped_latents = self.scale * tf.stop_gradient(latent)
+        stopped_latent = tf.stop_gradient(latent)
+        stopped_latents = stopped_latent * self.scale
 
         ROUND = (2.0**args.rounding_precision - 1)
         likelihoods = logsub(
-            self._distribution.log_cdf(
-                tf.clip_by_value(
-                    stopped_latents + 0.5 / ROUND,
-                    -1.0,
-                    1.0,
-                )),
-            self._distribution.log_cdf(
-                tf.clip_by_value(
-                    stopped_latents - 0.5 / ROUND,
-                    -1.0,
-                    1.0,
-                )),
+            self._distribution.log_cdf(stopped_latents + 0.5 / ROUND),
+            self._distribution.log_cdf(stopped_latents - 0.5 / ROUND),
         )
 
-        return (stopped_latents / self.scale, likelihoods)
+        return (stopped_latent, likelihoods)
 
 
 class Entropy(tf.keras.layers.Layer):
