@@ -44,13 +44,14 @@ class Quantizer(tf.keras.layers.Layer):
     def call(self, input):
         @tf.custom_gradient
         def quantizer(latent):
-            expand = latent * 255.0
-            expand = tf.clip_by_value(expand, 0, 255)
+            ROUND = (2.0**6 - 1)
+            expand = latent * ROUND
+            expand = tf.clip_by_value(expand, 0, ROUND)
             expand = tf.round(expand)
-            expand /= 255.0
+            expand /= ROUND
 
             def grad(dy):
-                return dy * (1 - tf.cos(255.0 * np.pi * latent))
+                return dy
 
             return expand, grad
 
@@ -130,7 +131,7 @@ class Entropy(tf.keras.layers.Layer):
         self.built = True
 
     def call(self, latent):
-        quantized = latent
+        quantized = self.quantizer(latent)
         likelihoods = self.distribution(quantized)
         return quantized, likelihoods
 
