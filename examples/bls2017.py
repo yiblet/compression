@@ -113,7 +113,7 @@ class LatentDistribution(tf.keras.layers.Layer):
 
     def call(self, latent):
 
-        stopped_latents = tf.clip_by_value(tf.stop_gradient(latent), 0.0, 1.0)
+        stopped_latents = tf.clip_by_value(latent, 0.0, 1.0)
 
         ROUND = (2.0**args.rounding_precision - 1)
 
@@ -326,10 +326,13 @@ def train():
 
     # Minimize loss and auxiliary loss, and execute update op.
     step = tf.train.create_global_step()
-    main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
-    gvs = main_optimizer.compute_gradients(train_loss)
-    capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
-    main_step = main_optimizer.apply_gradients(capped_gvs, global_step=step)
+    with tf.name_scope('optimizer'):
+        main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
+        gvs = main_optimizer.compute_gradients(train_loss)
+        capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var)
+                      for grad, var in gvs]
+        main_step = main_optimizer.apply_gradients(
+            capped_gvs, global_step=step)
 
     # aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
     # aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
