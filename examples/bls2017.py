@@ -52,9 +52,7 @@ class Quantizer(tf.keras.layers.Layer):
         @tf.custom_gradient
         def quantizer(latent):
             ROUND = (2.0**args.rounding_precision - 1)
-            expand = latent * ROUND
-            expand = tf.round(expand)
-            expand /= ROUND
+            expand = tf.round(ROUND * latent) / ROUND
 
             def grad(dy):
                 return dy
@@ -82,57 +80,48 @@ class LatentDistribution(tf.keras.layers.Layer):
         hidden_dims = int(input_shape[-1])
 
         with tf.name_scope('latent_distributions'):
-            categorical = self.add_weight(
-                name='categorical_distribution',
-                shape=[hidden_dims, self.categories],
-                trainable=True,
-            )
-            categorical = tf.nn.softmax(categorical)
+
             loc = self.add_weight(
-                name='logistic_loc_variables',
+                name='loc_variables',
                 shape=[hidden_dims, self.categories],
                 trainable=True,
             )
 
-            loc = self.add_weight(
-                name='logistic_loc_variables',
-                shape=[hidden_dims, self.categories],
-                trainable=True,
-            )
-
-            self.scale = tf.nn.softplus(
+            scale = tf.nn.softplus(
                 self.add_weight(
                     name='scale_variables',
-                    shape=[hidden_dims],
+                    shape=[hidden_dims, self.categories],
                     trainable=True,
                 ))
 
-            tf.summary.histogram('categorical', categorical)
             tf.summary.histogram('loc', loc)
-            tf.summary.histogram('scale', self.scale)
+            tf.summary.histogram('scale', scale)
 
-        self.vars = [categorical, loc, self.scale]
+        self.vars = [loc, scale]
         self._distribution = tfd.MixtureSameFamily(
-            mixture_distribution=tfd.Categorical(probs=categorical),
-            components_distribution=tfd.Normal(
+            mixture_distribution=tfd.Categorical(
+                probs=np.ones((hidden_dims, self.categories), np.float32) /
+                self.categories),
+            components_distribution=tfd.TruncatedNormal(
                 loc=loc,
-                scale=tf.ones_like(loc),
+                scale=scale,
+                low=0.0,
+                high=1.0,
             ))
 
         self.built = True
 
     def call(self, latent):
 
-        stopped_latent = tf.stop_gradient(latent)
-        stopped_latents = stopped_latent * self.scale
+        stopped_latents = tf.clip_by_value(tf.stop_gradient(latent), 0.0, 1.0)
 
         ROUND = (2.0**args.rounding_precision - 1)
-        likelihoods = logsub(
-            self._distribution.log_cdf(stopped_latents + 0.5 / ROUND),
-            self._distribution.log_cdf(stopped_latents - 0.5 / ROUND),
-        )
 
-        return (stopped_latent, likelihoods)
+        likelihoods = tf.log(
+            self._distribution.cdf(stopped_latents + 0.5 / ROUND) -
+            self._distribution.cdf(stopped_latents - 0.5 / ROUND))
+
+        return stopped_latents, likelihoods
 
 
 class Entropy(tf.keras.layers.Layer):
@@ -205,7 +194,7 @@ def analysis_transform(tensor, num_filters):
                 strides_down=2,
                 padding="same_zeros",
                 use_bias=False,
-                activation=None)
+                activation=tf.nn.sigmoid)
             tensor = layer(tensor)
 
         return tensor
@@ -274,7 +263,7 @@ def train():
 
     # Build autoencoder.
     y = analysis_transform(x, args.num_filters)
-    entropy_bottleneck = Entropy(20)
+    entropy_bottleneck = Entropy(5)
     y_tilde, likelihoods = entropy_bottleneck(y)
 
     x_tilde = synthesis_transform(y, args.num_filters)
@@ -322,6 +311,7 @@ def train():
     )
 
     # Total number of bits divided by number of pixels.
+
     train_bpp = tf.reduce_sum(likelihoods) / (-np.log(2) * num_pixels)
 
     # Mean squared error across pixels.
@@ -337,7 +327,9 @@ def train():
     # Minimize loss and auxiliary loss, and execute update op.
     step = tf.train.create_global_step()
     main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
-    main_step = main_optimizer.minimize(train_loss, global_step=step)
+    gvs = main_optimizer.compute_gradients(train_loss)
+    capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
+    main_step = main_optimizer.apply_gradients(capped_gvs, global_step=step)
 
     # aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
     # aux_step = aux_optimizer.minimize(entropy_bottleneck.losses[0])
@@ -348,7 +340,6 @@ def train():
     tf.summary.scalar("bpp", train_bpp)
     tf.summary.scalar("mse", train_mse)
     tf.summary.scalar("psnr", train_psnr)
-
     tf.summary.image("original", quantize_image(x))
     tf.summary.image("reconstruction", quantize_image(x_tilde))
 
