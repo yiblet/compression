@@ -40,6 +40,14 @@ import tensorflow_probability as tfp
 # ------------------------------------------------------------------------------
 
 
+@tf.custom_gradient
+def scale_gradient(latent):
+    def grad(dy):
+        return args.scale * dy
+
+    return tf.identity(latent), grad
+
+
 def logsub(loga, logb):
     """outputs log(a - b) for inputs log(a), log(b)"""
     with tf.name_scope('logsub'):
@@ -113,7 +121,7 @@ class LatentDistribution(tf.keras.layers.Layer):
 
     def call(self, latent):
 
-        stopped_latents = tf.clip_by_value(latent, 0.0, 1.0)
+        stopped_latents = scale_gradient(latent)
 
         ROUND = (2.0**args.rounding_precision - 1)
 
@@ -519,6 +527,11 @@ if __name__ == "__main__":
         '--rounding_precision',
         type=int,
         default=8,
+    )
+    parser.add_argument(
+        '--scale',
+        type=float,
+        default=1e-3,
     )
 
     args = parser.parse_args()
