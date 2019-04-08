@@ -125,9 +125,10 @@ class LatentDistribution(tf.keras.layers.Layer):
 
         ROUND = (2.0**args.rounding_precision - 1)
 
-        likelihoods = tf.log(
-            self._distribution.cdf(stopped_latents + 0.5 / ROUND) -
-            self._distribution.cdf(stopped_latents - 0.5 / ROUND))
+        likelihoods = logsub(
+            self._distribution.log_cdf(stopped_latents + 0.5 / ROUND),
+            self._distribution.log_cdf(stopped_latents - 0.5 / ROUND),
+        )
 
         return stopped_latents, likelihoods
 
@@ -337,7 +338,7 @@ def train():
     with tf.name_scope('optimizer'):
         main_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
         gvs = main_optimizer.compute_gradients(train_loss)
-        capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var)
+        capped_gvs = [(tf.clip_by_value(grad, -.1, .1), var)
                       for grad, var in gvs]
         main_step = main_optimizer.apply_gradients(
             capped_gvs, global_step=step)
